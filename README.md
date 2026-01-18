@@ -44,6 +44,23 @@ zig build -Doptimize=ReleaseFast
 
 # Analyze a file
 ./bin/utf8-index file input.txt
+
+# Options
+./bin/utf8-index -a file input.txt      # Show ALL characters
+./bin/utf8-index -n 50 file input.txt   # Limit to first 50 characters
+./bin/utf8-index -m file input.txt      # Show only multibyte (non-ASCII) chars
+./bin/utf8-index -m -a file input.txt   # All multibyte characters
+```
+
+### Example File
+
+An `example.txt` file is included with mixed UTF-8 content for testing — it contains
+Japanese text (日本語), mathematical symbols (∑, ∫, π, √), emojis (🎉, 🍣, 🚀), and
+other Unicode characters. Try:
+
+```bash
+./bin/utf8-index -m -a file example.txt   # See all 49 multibyte characters
+./bin/utf8-index count "$(cat example.txt)"
 ```
 
 ### Example Output
