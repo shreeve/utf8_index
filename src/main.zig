@@ -202,9 +202,9 @@ fn printCharacterTable(w: *std.Io.Writer, idx: *const Utf8Index, opts: Options) 
     else
         total; // For analyze command, default to all
 
-    // Table header
-    try w.print("{s:>5}  {s:>6}  {s:>4}  {s:<6}  {s:<8}  {s}\n", .{ "Idx", "Offset", "Len", "Char", "Unicode", "Bytes" });
-    try w.print("{s}\n", .{"-" ** 60});
+    // Table header (Char at end to avoid variable-width alignment issues)
+    try w.print("{s:>5}  {s:>6}  {s:>4}  {s:<8}  {s:<14}{s}\n", .{ "Idx", "Offset", "Len", "Unicode", "Bytes", "Char" });
+    try w.print("{s}\n", .{"-" ** 55});
 
     for (0..total) |i| {
         const clen = idx.charLen(i).?;
@@ -252,19 +252,26 @@ fn printCharacterTable(w: *std.Io.Writer, idx: *const Utf8Index, opts: Options) 
             unicode_len = (std.fmt.bufPrint(&unicode_str, "U+{X:0>4}", .{c}) catch &[_]u8{}).len;
         }
 
-        try w.print("{d:>5}  {d:>6}  {d:>4}  {s:<6}  {s:<8}  ", .{
+        try w.print("{d:>5}  {d:>6}  {d:>4}  {s:<8}  ", .{
             i,
             offset,
             clen,
-            char_display[0..char_len],
             unicode_str[0..unicode_len],
         });
 
-        // Print hex bytes
+        // Print hex bytes (fixed width: 4 bytes max = 12 chars)
+        var hex_written: usize = 0;
         for (bytes) |b| {
             try w.print("{x:0>2} ", .{b});
+            hex_written += 3;
         }
-        try w.print("\n", .{});
+        // Pad to 12 chars for alignment
+        while (hex_written < 12) : (hex_written += 1) {
+            try w.print(" ", .{});
+        }
+
+        // Character at end (variable width doesn't affect alignment)
+        try w.print("  {s}\n", .{char_display[0..char_len]});
         shown += 1;
     }
 

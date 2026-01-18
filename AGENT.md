@@ -64,7 +64,7 @@ zig build -Doptimize=ReleaseFast  # Optimized build
 
 # Options
 -a, --all        Show all characters (not just first 20)
--n <N>           Limit to N characters  
+-n <N>           Limit to N characters
 -m, --multibyte  Show only non-ASCII characters
 ```
 
