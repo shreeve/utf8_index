@@ -28,7 +28,11 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
-    b.installArtifact(exe);
+    // Install to bin/ instead of zig-out/bin/
+    const install = b.addInstallArtifact(exe, .{
+        .dest_dir = .{ .override = .{ .custom = "../bin" } },
+    });
+    b.getInstallStep().dependOn(&install.step);
 
     // ==========================================================================
     // Run command

@@ -31,25 +31,25 @@ zig build -Doptimize=ReleaseFast
 
 ```bash
 # Analyze a UTF-8 string showing all character positions
-./zig-out/bin/utf8-index analyze "Hello世界"
+./bin/utf8-index analyze "Hello世界"
 
 # Count characters in a string
-./zig-out/bin/utf8-index count "Hello, 世界! 🎉"
+./bin/utf8-index count "Hello, 世界! 🎉"
 
 # Get character at index (0-based)
-./zig-out/bin/utf8-index char "a世b🎉c" 3
+./bin/utf8-index char "a世b🎉c" 3
 
 # Get character slice [start..end)
-./zig-out/bin/utf8-index slice "Hello世界!" 5 7
+./bin/utf8-index slice "Hello世界!" 5 7
 
 # Analyze a file
-./zig-out/bin/utf8-index file input.txt
+./bin/utf8-index file input.txt
 ```
 
 ### Example Output
 
 ```
-$ ./zig-out/bin/utf8-index analyze "Hello世界"
+$ ./bin/utf8-index analyze "Hello世界"
 
 Input: "Hello世界"
 Bytes: 11
@@ -67,7 +67,7 @@ Characters: 7
 ```
 
 ```
-$ ./zig-out/bin/utf8-index char "a世b🎉c" 3
+$ ./bin/utf8-index char "a世b🎉c" 3
 
 Index: 3
 Character: 🎉
