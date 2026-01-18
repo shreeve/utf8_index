@@ -28,9 +28,10 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
-    // Install to bin/ instead of zig-out/bin/
+    // Install to bin/utf8-index
     const install = b.addInstallArtifact(exe, .{
-        .dest_dir = .{ .override = .{ .custom = "../bin" } },
+        .dest_dir = .{ .override = .{ .custom = ".." } },
+        .dest_sub_path = "bin/utf8-index",
     });
     b.getInstallStep().dependOn(&install.step);
 
