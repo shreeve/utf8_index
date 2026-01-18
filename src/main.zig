@@ -1,6 +1,12 @@
 const std = @import("std");
 const Utf8Index = @import("utf8_index").Utf8Index;
 
+const Options = struct {
+    show_all: bool = false,
+    limit: ?usize = null,
+    multibyte_only: bool = false,
+};
+
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -24,7 +30,46 @@ pub fn main() !void {
         std.process.exit(1);
     }
 
-    const command = args[1];
+    // Parse options
+    var opts = Options{};
+    var positional = std.ArrayListUnmanaged([]const u8){};
+    defer positional.deinit(allocator);
+
+    var i: usize = 1;
+    while (i < args.len) : (i += 1) {
+        const arg = args[i];
+        if (std.mem.eql(u8, arg, "-a") or std.mem.eql(u8, arg, "--all")) {
+            opts.show_all = true;
+        } else if (std.mem.eql(u8, arg, "-m") or std.mem.eql(u8, arg, "--multibyte")) {
+            opts.multibyte_only = true;
+        } else if (std.mem.eql(u8, arg, "-n")) {
+            i += 1;
+            if (i >= args.len) {
+                try stderr.print("Error: -n requires a number\n", .{});
+                try stderr.flush();
+                std.process.exit(1);
+            }
+            opts.limit = std.fmt.parseInt(usize, args[i], 10) catch {
+                try stderr.print("Error: invalid number '{s}'\n", .{args[i]});
+                try stderr.flush();
+                std.process.exit(1);
+            };
+        } else if (arg.len > 0 and arg[0] == '-' and !std.mem.eql(u8, arg, "-h") and !std.mem.eql(u8, arg, "--help")) {
+            try stderr.print("Unknown option: {s}\n", .{arg});
+            try stderr.flush();
+            std.process.exit(1);
+        } else {
+            try positional.append(allocator, arg);
+        }
+    }
+
+    if (positional.items.len < 1) {
+        try printUsage(stderr);
+        try stderr.flush();
+        std.process.exit(1);
+    }
+
+    const command = positional.items[0];
 
     if (std.mem.eql(u8, command, "help") or std.mem.eql(u8, command, "--help") or std.mem.eql(u8, command, "-h")) {
         try printUsage(stdout);
@@ -33,71 +78,71 @@ pub fn main() !void {
     }
 
     if (std.mem.eql(u8, command, "analyze")) {
-        if (args.len < 3) {
+        if (positional.items.len < 2) {
             try stderr.print("Error: 'analyze' requires a string argument\n", .{});
             try stderr.flush();
             std.process.exit(1);
         }
-        try analyzeString(stdout, allocator, args[2]);
+        try analyzeString(stdout, allocator, positional.items[1], opts);
         try stdout.flush();
         return;
     }
 
     if (std.mem.eql(u8, command, "count")) {
-        if (args.len < 3) {
+        if (positional.items.len < 2) {
             try stderr.print("Error: 'count' requires a string argument\n", .{});
             try stderr.flush();
             std.process.exit(1);
         }
-        try countString(stdout, args[2]);
+        try countString(stdout, allocator, positional.items[1]);
         try stdout.flush();
         return;
     }
 
     if (std.mem.eql(u8, command, "char")) {
-        if (args.len < 4) {
+        if (positional.items.len < 3) {
             try stderr.print("Error: 'char' requires a string and index argument\n", .{});
             try stderr.flush();
             std.process.exit(1);
         }
-        const index = std.fmt.parseInt(usize, args[3], 10) catch {
-            try stderr.print("Error: invalid index '{s}'\n", .{args[3]});
+        const index = std.fmt.parseInt(usize, positional.items[2], 10) catch {
+            try stderr.print("Error: invalid index '{s}'\n", .{positional.items[2]});
             try stderr.flush();
             std.process.exit(1);
         };
-        try charAtIndex(stdout, allocator, args[2], index);
+        try charAtIndex(stdout, allocator, positional.items[1], index);
         try stdout.flush();
         return;
     }
 
     if (std.mem.eql(u8, command, "slice")) {
-        if (args.len < 5) {
+        if (positional.items.len < 4) {
             try stderr.print("Error: 'slice' requires string, start, and end arguments\n", .{});
             try stderr.flush();
             std.process.exit(1);
         }
-        const start = std.fmt.parseInt(usize, args[3], 10) catch {
-            try stderr.print("Error: invalid start index '{s}'\n", .{args[3]});
+        const start = std.fmt.parseInt(usize, positional.items[2], 10) catch {
+            try stderr.print("Error: invalid start index '{s}'\n", .{positional.items[2]});
             try stderr.flush();
             std.process.exit(1);
         };
-        const end = std.fmt.parseInt(usize, args[4], 10) catch {
-            try stderr.print("Error: invalid end index '{s}'\n", .{args[4]});
+        const end = std.fmt.parseInt(usize, positional.items[3], 10) catch {
+            try stderr.print("Error: invalid end index '{s}'\n", .{positional.items[3]});
             try stderr.flush();
             std.process.exit(1);
         };
-        try sliceString(stdout, allocator, args[2], start, end);
+        try sliceString(stdout, allocator, positional.items[1], start, end);
         try stdout.flush();
         return;
     }
 
     if (std.mem.eql(u8, command, "file")) {
-        if (args.len < 3) {
+        if (positional.items.len < 2) {
             try stderr.print("Error: 'file' requires a filename argument\n", .{});
             try stderr.flush();
             std.process.exit(1);
         }
-        try analyzeFile(stdout, allocator, args[2]);
+        try analyzeFile(stdout, allocator, positional.items[1], opts);
         try stdout.flush();
         return;
     }
@@ -116,15 +161,20 @@ fn printUsage(w: *std.Io.Writer) !void {
         \\to byte offsets for O(1) lookups.
         \\
         \\USAGE:
-        \\    utf8-index <command> [arguments]
+        \\    utf8-index [options] <command> [arguments]
         \\
         \\COMMANDS:
-        \\    analyze <string>              Analyze a UTF-8 string, showing all character positions
+        \\    analyze <string>              Analyze a UTF-8 string, showing character positions
         \\    count <string>                Count characters in a UTF-8 string
         \\    char <string> <index>         Get character at index (0-based)
         \\    slice <string> <start> <end>  Get character slice [start..end)
         \\    file <filename>               Analyze a UTF-8 file
         \\    help                          Show this help message
+        \\
+        \\OPTIONS:
+        \\    -a, --all        Show all characters (default: first 20 for files)
+        \\    -n <N>           Limit output to N characters
+        \\    -m, --multibyte  Show only multibyte (non-ASCII) characters
         \\
         \\EXAMPLES:
         \\    utf8-index analyze "Hello世界"
@@ -132,27 +182,43 @@ fn printUsage(w: *std.Io.Writer) !void {
         \\    utf8-index char "a世b🎉c" 3
         \\    utf8-index slice "Hello世界!" 5 7
         \\    utf8-index file input.txt
+        \\    utf8-index -a file input.txt           # Show all characters
+        \\    utf8-index -n 50 file input.txt        # Show first 50 characters
+        \\    utf8-index -m file input.txt           # Show only multibyte chars
         \\
     , .{});
 }
 
-fn analyzeString(w: *std.Io.Writer, allocator: std.mem.Allocator, input: []const u8) !void {
-    var idx = Utf8Index.init(allocator, input);
-    defer idx.deinit();
-    try idx.build();
+fn printCharacterTable(w: *std.Io.Writer, idx: *const Utf8Index, opts: Options) !void {
+    const total = idx.len();
+    var shown: usize = 0;
+    var multibyte_count: usize = 0;
 
-    try w.print("Input: \"{s}\"\n", .{input});
-    try w.print("Bytes: {d}\n", .{input.len});
-    try w.print("Characters: {d}\n", .{idx.len()});
-    try w.print("\n", .{});
+    // Determine effective limit
+    const limit: usize = if (opts.show_all)
+        total
+    else if (opts.limit) |l|
+        l
+    else
+        total; // For analyze command, default to all
 
     // Table header
-    try w.print("{s:>5}  {s:>6}  {s:>4}  {s:<6}  {s}\n", .{ "Idx", "Offset", "Len", "Char", "Bytes (hex)" });
-    try w.print("{s}\n", .{"-" ** 50});
+    try w.print("{s:>5}  {s:>6}  {s:>4}  {s:<6}  {s:<8}  {s}\n", .{ "Idx", "Offset", "Len", "Char", "Unicode", "Bytes" });
+    try w.print("{s}\n", .{"-" ** 60});
 
-    for (0..idx.len()) |i| {
-        const offset = idx.byteOffset(i).?;
+    for (0..total) |i| {
         const clen = idx.charLen(i).?;
+
+        // Skip ASCII if multibyte-only mode
+        if (opts.multibyte_only and clen == 1) {
+            continue;
+        }
+
+        if (clen > 1) multibyte_count += 1;
+
+        if (shown >= limit) continue; // Still count but don't print
+
+        const offset = idx.byteOffset(i).?;
         const char = idx.charAt(i);
         const bytes = idx.charBytes(i).?;
 
@@ -160,38 +226,111 @@ fn analyzeString(w: *std.Io.Writer, allocator: std.mem.Allocator, input: []const
         var char_display: [8]u8 = undefined;
         var char_len: usize = 0;
         if (char) |c| {
-            if (c < 0x20 or c == 0x7F) {
-                char_display[0] = '\\';
-                char_display[1] = 'x';
-                const hex = "0123456789abcdef";
-                char_display[2] = hex[(c >> 4) & 0xF];
-                char_display[3] = hex[c & 0xF];
-                char_len = 4;
+            if (c < 0x20) {
+                // Control characters
+                const names = [_][]const u8{
+                    "NUL", "SOH", "STX", "ETX", "EOT", "ENQ", "ACK", "BEL",
+                    "BS",  "TAB", "LF",  "VT",  "FF",  "CR",  "SO",  "SI",
+                    "DLE", "DC1", "DC2", "DC3", "DC4", "NAK", "SYN", "ETB",
+                    "CAN", "EM",  "SUB", "ESC", "FS",  "GS",  "RS",  "US",
+                };
+                const name = names[c];
+                @memcpy(char_display[0..name.len], name);
+                char_len = name.len;
+            } else if (c == 0x7F) {
+                @memcpy(char_display[0..3], "DEL");
+                char_len = 3;
             } else {
                 char_len = std.unicode.utf8Encode(c, &char_display) catch 0;
             }
         }
 
-        try w.print("{d:>5}  {d:>6}  {d:>4}  {s:<6}", .{
+        // Unicode codepoint
+        var unicode_str: [10]u8 = undefined;
+        var unicode_len: usize = 0;
+        if (char) |c| {
+            unicode_len = (std.fmt.bufPrint(&unicode_str, "U+{X:0>4}", .{c}) catch &[_]u8{}).len;
+        }
+
+        try w.print("{d:>5}  {d:>6}  {d:>4}  {s:<6}  {s:<8}  ", .{
             i,
             offset,
             clen,
             char_display[0..char_len],
+            unicode_str[0..unicode_len],
         });
 
         // Print hex bytes
-        try w.print("  ", .{});
         for (bytes) |b| {
             try w.print("{x:0>2} ", .{b});
         }
         try w.print("\n", .{});
+        shown += 1;
+    }
+
+    // Summary
+    if (opts.multibyte_only) {
+        if (shown < multibyte_count) {
+            try w.print("... ({d} more multibyte characters)\n", .{multibyte_count - shown});
+        }
+    } else if (shown < total) {
+        try w.print("... ({d} more characters)\n", .{total - shown});
     }
 }
 
-fn countString(w: *std.Io.Writer, input: []const u8) !void {
-    const count = Utf8Index.countChars(input);
+fn analyzeString(w: *std.Io.Writer, allocator: std.mem.Allocator, input: []const u8, opts: Options) !void {
+    var idx = Utf8Index.init(allocator, input);
+    defer idx.deinit();
+    try idx.build();
+
+    // Count multibyte characters
+    var multibyte: usize = 0;
+    for (0..idx.len()) |i| {
+        if (idx.charLen(i).? > 1) multibyte += 1;
+    }
+
+    try w.print("Input: \"{s}\"\n", .{input});
     try w.print("Bytes: {d}\n", .{input.len});
-    try w.print("Characters: {d}\n", .{count});
+    try w.print("Characters: {d}", .{idx.len()});
+    if (multibyte > 0) {
+        try w.print(" ({d} ASCII, {d} multibyte)\n", .{ idx.len() - multibyte, multibyte });
+    } else {
+        try w.print(" (all ASCII)\n", .{});
+    }
+    try w.print("\n", .{});
+
+    try printCharacterTable(w, &idx, opts);
+}
+
+fn countString(w: *std.Io.Writer, allocator: std.mem.Allocator, input: []const u8) !void {
+    var idx = Utf8Index.init(allocator, input);
+    defer idx.deinit();
+    try idx.build();
+
+    // Count by byte length
+    var ascii: usize = 0;
+    var two_byte: usize = 0;
+    var three_byte: usize = 0;
+    var four_byte: usize = 0;
+
+    for (0..idx.len()) |i| {
+        switch (idx.charLen(i).?) {
+            1 => ascii += 1,
+            2 => two_byte += 1,
+            3 => three_byte += 1,
+            4 => four_byte += 1,
+            else => {},
+        }
+    }
+
+    try w.print("Bytes: {d}\n", .{input.len});
+    try w.print("Characters: {d}\n", .{idx.len()});
+    try w.print("\n", .{});
+    try w.print("Breakdown:\n", .{});
+    try w.print("  ASCII (1-byte):   {d:>6}\n", .{ascii});
+    if (two_byte > 0) try w.print("  2-byte:           {d:>6}\n", .{two_byte});
+    if (three_byte > 0) try w.print("  3-byte:           {d:>6}\n", .{three_byte});
+    if (four_byte > 0) try w.print("  4-byte:           {d:>6}\n", .{four_byte});
 }
 
 fn charAtIndex(w: *std.Io.Writer, allocator: std.mem.Allocator, input: []const u8, index: usize) !void {
@@ -236,7 +375,7 @@ fn sliceString(w: *std.Io.Writer, allocator: std.mem.Allocator, input: []const u
     }
 }
 
-fn analyzeFile(w: *std.Io.Writer, allocator: std.mem.Allocator, filename: []const u8) !void {
+fn analyzeFile(w: *std.Io.Writer, allocator: std.mem.Allocator, filename: []const u8, opts: Options) !void {
     const file = std.fs.cwd().openFile(filename, .{}) catch |err| {
         try w.print("Error opening file '{s}': {any}\n", .{ filename, err });
         return;
@@ -253,54 +392,39 @@ fn analyzeFile(w: *std.Io.Writer, allocator: std.mem.Allocator, filename: []cons
     defer idx.deinit();
     try idx.build();
 
+    // Count multibyte characters
+    var multibyte: usize = 0;
+    for (0..idx.len()) |i| {
+        if (idx.charLen(i).? > 1) multibyte += 1;
+    }
+
     try w.print("File: {s}\n", .{filename});
     try w.print("Bytes: {d}\n", .{content.len});
-    try w.print("Characters: {d}\n", .{idx.len()});
-
-    // Show first 20 characters as a preview
-    const preview_len = @min(idx.len(), 20);
-    if (preview_len > 0) {
-        try w.print("\nFirst {d} characters:\n", .{preview_len});
-        try w.print("{s:>5}  {s:>6}  {s:>4}  {s:<6}  {s}\n", .{ "Idx", "Offset", "Len", "Char", "Bytes (hex)" });
-        try w.print("{s}\n", .{"-" ** 50});
-
-        for (0..preview_len) |i| {
-            const offset = idx.byteOffset(i).?;
-            const clen = idx.charLen(i).?;
-            const char = idx.charAt(i);
-            const bytes = idx.charBytes(i).?;
-
-            var char_display: [8]u8 = undefined;
-            var char_len: usize = 0;
-            if (char) |c| {
-                if (c < 0x20 or c == 0x7F) {
-                    char_display[0] = '\\';
-                    char_display[1] = 'x';
-                    const hex = "0123456789abcdef";
-                    char_display[2] = hex[(c >> 4) & 0xF];
-                    char_display[3] = hex[c & 0xF];
-                    char_len = 4;
-                } else {
-                    char_len = std.unicode.utf8Encode(c, &char_display) catch 0;
-                }
-            }
-
-            try w.print("{d:>5}  {d:>6}  {d:>4}  {s:<6}", .{
-                i,
-                offset,
-                clen,
-                char_display[0..char_len],
-            });
-
-            try w.print("  ", .{});
-            for (bytes) |b| {
-                try w.print("{x:0>2} ", .{b});
-            }
-            try w.print("\n", .{});
-        }
-
-        if (idx.len() > 20) {
-            try w.print("... ({d} more characters)\n", .{idx.len() - 20});
-        }
+    try w.print("Characters: {d}", .{idx.len()});
+    if (multibyte > 0) {
+        try w.print(" ({d} ASCII, {d} multibyte)\n", .{ idx.len() - multibyte, multibyte });
+    } else {
+        try w.print(" (all ASCII)\n", .{});
     }
+
+    if (idx.len() == 0) return;
+
+    // Adjust opts for file command - default to 20 unless specified
+    var file_opts = opts;
+    if (!opts.show_all and opts.limit == null) {
+        file_opts.limit = 20;
+    }
+
+    const effective_limit = if (file_opts.show_all) idx.len() else (file_opts.limit orelse 20);
+    const showing = if (opts.multibyte_only) "multibyte characters" else "characters";
+
+    if (file_opts.show_all) {
+        try w.print("\nAll {s}:\n", .{showing});
+    } else if (effective_limit < idx.len()) {
+        try w.print("\nFirst {d} {s}:\n", .{ effective_limit, showing });
+    } else {
+        try w.print("\nAll {s}:\n", .{showing});
+    }
+
+    try printCharacterTable(w, &idx, file_opts);
 }
